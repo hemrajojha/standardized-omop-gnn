@@ -1,8 +1,7 @@
 # Standardized OMOP GNN — Heterogeneous Temporal GNN on OMOP CDM with Attribution Analysis
 
 > Code repository for the paper:  
-> **"Standardized Clinical Prediction with Graph Neural Networks on OMOP Common Data Model"**  
-> *(under review)*
+> **"Data Standardization Matters: Enhancing GNN-Based Patient Journey Modeling with OMOP CDM and Controlled Clinical Vocabularies"**  
 
 ---
 
@@ -166,6 +165,8 @@ python src/preprocess/build_patient_graphs.py \
 
 ### 4. Train the GNN
 
+> **GNN implementation** based on [TRANS](https://github.com/The-Real-JerryChen/TRANS) — official implementation for "Predictive Modeling with Temporal Graphical Representation on Electronic Health Records" (IJCAI 2024). The PatientGNN architecture replicates and extends TRANS with OMOP CDM support and RotatE KG embeddings.
+
 PatientGNN (E-TRANS) supports two tasks:
 
 **Diagnosis prediction (multi-label, 275 SNOMED CT labels):**
@@ -286,20 +287,6 @@ Patient-level data (MIMIC-IV) cannot be shared under the PhysioNet Data Use Agre
 
 ---
 
-## Citation
-
-If you use this code, please cite:
-
-```bibtex
-@article{ojha2026standardizedgnn,
-  title   = {Standardized Clinical Prediction with Graph Neural Networks on OMOP Common Data Model},
-  author  = {Ojha, Hemraj and others},
-  journal = {under review},
-  year    = {2026}
-}
-```
-
----
 
 ## License
 
