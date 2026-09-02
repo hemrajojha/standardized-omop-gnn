@@ -23,10 +23,9 @@ Thumbs.db
 .env
 *.env
 
-# Paper drafts and docs
-PAPER_DRAFT.md
-PAPER_ELABORATED.md
+# Markdown (except README)
 *.md
+!README.md
 *.docx
 *.pptx
 *.drawio
