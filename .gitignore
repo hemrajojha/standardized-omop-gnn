@@ -1,0 +1,87 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# VS Code
+.vscode/
+
+# Logs
+logs/
+*.log
+
+# Data
+data/raw/
+data/vocab/
+data/exports/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment / secrets
+.env
+*.env
+
+# Paper drafts and docs
+PAPER_DRAFT.md
+PAPER_ELABORATED.md
+*.md
+*.docx
+*.pptx
+*.drawio
+*.xml
+
+# Patch/generate scripts (local only)
+patch_training_curves*.py
+generate_docs*.py
+generate_presentation*.py
+generate_qa.py
+plot_training_curves.py
+
+# Broadsea submodule (separate repo)
+Broadsea/
+
+# Old/duplicate ETL pipeline
+sql/
+
+# TRANS — private UTS GitLab repo, exclude entirely from public repo
+TRANS/
+
+# Loose root-level analysis scripts (duplicates of analysis/)
+analyse_cancer_subgroup.py
+analyse_complexity.py
+analyse_early_prediction.py
+analyse_label_categories.py
+analyse_label_categories_separate_models.py
+analyse_per_label.py
+analyse_subgroup.py
+draw_patient_graph.py
+plot_kg_coverage.py
+plot_per_label_auroc.py
+plot_vocab_significance.py
+
+# Docs and diagram folders
+docs/
+diagrams/
+images/
+config/
+scripts/
+git/
+git
+
+# Binary archives
+*.tar.gz
+*.zip
+
+# Analysis outputs (generated figures, CSVs, model outputs)
+analysis/analysis/
+analysis/rich_inference/
+analysis/per_label/
+analysis/cancer_subgroup/
+analysis/complexity/
+analysis/diabetes_subgroup/
+analysis/early_prediction/
+analysis/label_categories/
+analysis/label_categories_separate/
+analysis/rich_inference_results.tar.gz

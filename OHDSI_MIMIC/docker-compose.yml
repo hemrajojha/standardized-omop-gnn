@@ -1,0 +1,101 @@
+version: "3.9"
+
+# -----------------------------------------------------------------------
+# OHDSI MIMIC-IV OMOP CDM – Docker Compose
+#
+# Services:
+#   postgres  – PostgreSQL 15 (mimiciv_omop database)
+#   pgadmin   – pgAdmin 4 web UI (optional, port 5050)
+#
+# Broadsea services (ATLAS, WebAPI) are defined but commented out.
+# Uncomment and configure when ready for clinical analytics.
+# -----------------------------------------------------------------------
+
+services:
+
+  # -------------------------------------------------------------------
+  # PostgreSQL
+  # -------------------------------------------------------------------
+  postgres:
+    image: postgres:15-alpine
+    container_name: ohdsi_mimic_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mimiciv_omop}
+      POSTGRES_USER: ${POSTGRES_USER:-omop_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-omop_pass}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Mount data directories read-only so COPY commands can access CSVs
+      - ../data/raw/mimiciv:/data/mimiciv:ro
+      - ../data/vocab:/data/vocab:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-omop_user} -d ${POSTGRES_DB:-mimiciv_omop}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # -------------------------------------------------------------------
+  # pgAdmin (optional web UI)
+  # -------------------------------------------------------------------
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: ohdsi_mimic_pgadmin
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@omop.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    profiles:
+      - tools
+
+  # -------------------------------------------------------------------
+  # BROADSEA – uncomment the block below when ready for ATLAS analytics
+  # Requires Broadsea images; see https://github.com/OHDSI/Broadsea
+  # -------------------------------------------------------------------
+
+  # broadsea-webtools:
+  #   image: ohdsi/broadsea-webtools:latest
+  #   container_name: ohdsi_broadsea_webtools
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   environment:
+  #     DATASOURCE_DRIVERCLASSNAME: org.postgresql.Driver
+  #     DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-mimiciv_omop}
+  #     DATASOURCE_USERNAME: ${POSTGRES_USER:-omop_user}
+  #     DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-omop_pass}
+  #     DATASOURCE_OHDSI_SCHEMA: omopcdm
+  #     CDM_SCHEMA: omopcdm
+  #     VOCAB_SCHEMA: omopcdm
+  #     RESULTS_SCHEMA: results
+  #     CDM_VERSION: "5"
+  #   ports:
+  #     - "8080:8080"
+  #   profiles:
+  #     - atlas
+
+  # broadsea-atlasdb:
+  #   image: ohdsi/broadsea-atlasdb:2.1.0
+  #   container_name: ohdsi_broadsea_atlasdb
+  #   environment:
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-omop_pass}
+  #   ports:
+  #     - "5433:5432"
+  #   volumes:
+  #     - atlasdb_data:/var/lib/postgresql/data
+  #   profiles:
+  #     - atlas
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+  # atlasdb_data:   # uncomment with atlas profile
