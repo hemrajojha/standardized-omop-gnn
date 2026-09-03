@@ -53,7 +53,6 @@ analyse_complexity.py
 analyse_early_prediction.py
 analyse_label_categories.py
 analyse_label_categories_separate_models.py
-analyse_per_label.py
 analyse_subgroup.py
 draw_patient_graph.py
 plot_kg_coverage.py
