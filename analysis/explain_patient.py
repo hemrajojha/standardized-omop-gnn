@@ -29,6 +29,7 @@ import torch
 import torch.nn.functional as F
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src" / "gnn"))  # train.py imports `model`
 from src.gnn.model import PatientGNN, _sinusoidal_lpe, _metapath_rw_se
 
 
@@ -189,6 +190,10 @@ def main():
     p.add_argument("--out_json",       default=None)
     p.add_argument("--min_conditions", type=int, default=3,
                    help="Auto-advance to first patient with >= this many condition nodes")
+    # Must match the training run (train.py defaults)
+    p.add_argument("--val_frac",       type=float, default=0.10)
+    p.add_argument("--test_frac",      type=float, default=0.15)
+    p.add_argument("--seed",           type=int,   default=42)
     args = p.parse_args()
 
     # ── Vocab ------------------------------------------------------------------
@@ -230,10 +235,16 @@ def main():
 
     # ── Graphs ----------------------------------------------------------------
     print(f"Loading graphs: {args.graphs_path}")
-    graphs     = torch.load(args.graphs_path, map_location="cpu", weights_only=False)
-    n          = len(graphs)
-    test_start = int(n * 0.8)
-    test_graphs = graphs[test_start:]
+    # Same preprocessing and split as training (src/gnn/train.py): drop graphs
+    # without labels, normalise visit features, remove last-visit condition
+    # edges (label leakage), then the seeded 75/10/15 split.
+    from src.gnn.train import load_omop_diagnosis_data, split_graphs
+    loader_args = argparse.Namespace(graphs_path=args.graphs_path,
+                                     vocab_path=args.vocab_path)
+    graphs, _, _ = load_omop_diagnosis_data(loader_args)
+    _, _, test_graphs = split_graphs(graphs, args.val_frac, args.test_frac,
+                                     args.seed)
+    print(f"Test split: {len(test_graphs)} patients")
 
     # Auto-find a patient with enough condition nodes
     patient_idx, graph = find_patient_with_conditions(
