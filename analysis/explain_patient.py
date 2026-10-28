@@ -206,7 +206,9 @@ def main():
     # ── Model -----------------------------------------------------------------
     print(f"Loading checkpoint: {args.checkpoint}")
     ckpt  = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
-    state = ckpt.get("model_state_dict", ckpt)
+    # train.py saves {"model_state", "epoch", "val_metrics", "args"}; also accept
+    # "model_state_dict" or a plain state dict.
+    state = ckpt.get("model_state") or ckpt.get("model_state_dict") or ckpt
 
     model = PatientGNN.from_config(
         no_kg=True,
@@ -220,7 +222,9 @@ def main():
         proc_vocab_size=vocab_sizes["procedure"],
         drug_vocab_size=vocab_sizes["drug"],
     )
-    model.load_state_dict(state, strict=False)
+    # strict=True: fail loudly if the checkpoint does not match the model,
+    # never run attribution on silently uninitialised weights.
+    model.load_state_dict(state, strict=True)
     model.to(args.device)
     print("Model loaded.")
 
