@@ -1,0 +1,27 @@
+# Tested with Python 3.11.15, PyTorch 2.5.1 + CUDA 12.4 (HPC Singularity image
+# pytorch-251-cuda124-pykeen). Versions below are those from that environment.
+#
+# 1. Install PyTorch for your platform first:
+#      GPU (CUDA 12.4): pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu124
+#      CPU only:        pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+# 2. Then: pip install -r requirements.txt
+
+torch==2.5.1
+torch-geometric==2.7.0
+pykeen==1.11.1          # src/kg/train_rotate.py (RotatE KG embeddings)
+numpy==1.24.4
+pandas==1.5.3
+scikit-learn==1.8.0
+scipy==1.15.3
+matplotlib==3.7.1
+joblib==1.5.3
+tqdm==4.67.3
+
+# Used outside the HPC image (not pinned):
+psycopg2-binary>=2.9    # database lookups (analysis/query_concepts.py, explain_patient.py, batch_query.py)
+streamlit>=1.30         # analysis/attribution_app.py
+
+# Optional: only for the ICD / TRANS comparison (--data_source pyhealth and the
+# TRANS-vs-GNN analysis scripts). These also need the TRANS benchmark code on
+# the Python path.
+# pyhealth==1.1.6

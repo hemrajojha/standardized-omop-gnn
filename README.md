@@ -71,15 +71,20 @@ standardized-omop-gnn/
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.11 (tested with 3.11.15; scikit-learn 1.8 needs 3.11+)
 - PostgreSQL 14+ (or Docker)
 - CUDA-capable GPU (recommended for training and batch attribution)
 - MIMIC-IV access via [PhysioNet](https://physionet.org/content/mimiciv/) (credentialed)
 - Athena vocabulary download: SNOMED CT, RxNorm, LOINC ([athena.ohdsi.org](https://athena.ohdsi.org/))
 
-Install Python dependencies:
+Install Python dependencies (tested with PyTorch 2.5.1, CUDA 12.4, PyTorch Geometric 2.7.0, PyKEEN 1.11.1). Install PyTorch for your platform first, then the rest:
 
 ```bash
+# GPU (CUDA 12.4)
+pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu124
+# or CPU only
+pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+
 pip install -r requirements.txt
 ```
 
