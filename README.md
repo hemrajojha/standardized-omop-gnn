@@ -15,8 +15,8 @@ This repository provides a full end-to-end pipeline for clinical predictive mode
 4. **Attribution Analysis** — Gradient-based attribution of top clinical concepts per patient, with a Streamlit dashboard for interactive exploration
 
 **Key results:**
-- AUROC **0.909** on next-visit diagnosis prediction (275 SNOMED CT labels, MIMIC-IV test set, 20,033 patients)
-- Gradient attribution computed for 20,024 test patients across condition, procedure, and drug domains
+- Macro AUROC **0.909** on diagnosis prediction (275 SNOMED CT labels) on the MIMIC-IV test set (15,024 patients), best configuration E11 (see [Train the GNN](#3-train-the-gnn))
+- Gradient attribution per patient across condition, procedure and drug domains
 
 ---
 
@@ -46,7 +46,7 @@ standardized-omop-gnn/
 │       └── train_rotate.py       # RotatE KG embedding training (PyKEEN)
 ├── analysis/
 │   ├── attribution_app.py        # Streamlit dashboard for attribution results
-│   ├── batch_explain.py          # Batch gradient attribution (HPC, 20k+ patients)
+│   ├── batch_explain.py          # Batch gradient attribution over the test set (HPC)
 │   ├── batch_query.py            # Query attribution JSONs by concept or label
 │   ├── explain_patient.py        # Single-patient attribution + enrichment
 │   ├── visualize_attribution.py  # Attribution bar plots per patient
@@ -61,7 +61,7 @@ standardized-omop-gnn/
 │   ├── analyse_complexity.py     # Graph complexity vs prediction quality
 │   ├── plot_complexity_distribution.py  # Complexity distribution figures
 │   └── plot_graph_complexity.py  # Graph complexity scatter plots
-├── .env.example                  # Anthropic + environment variable template
+├── .env.example                  # Database settings for the analysis scripts
 ├── .gitignore
 ├── requirements.txt
 └── README.md
@@ -74,8 +74,8 @@ standardized-omop-gnn/
 - Python 3.11 (tested with 3.11.15; scikit-learn 1.8 needs 3.11+)
 - PostgreSQL 14+ (or Docker)
 - CUDA-capable GPU (recommended for training and batch attribution)
-- MIMIC-IV access via [PhysioNet](https://physionet.org/content/mimiciv/) (credentialed)
-- Athena vocabulary download: SNOMED CT, RxNorm, LOINC ([athena.ohdsi.org](https://athena.ohdsi.org/))
+- MIMIC-IV **v3.1** access via [PhysioNet](https://physionet.org/content/mimiciv/) (credentialed; 364,627 patients, 546,028 admissions)
+- Athena vocabularies ([athena.ohdsi.org](https://athena.ohdsi.org/)), release **v5.0 27-FEB-26** used for the paper. Select at least: SNOMED, ICD9CM, ICD10CM, ICD9Proc, ICD10PCS, RxNorm, RxNorm Extension, NDC, ATC, LOINC, UCUM (plus the default domain vocabularies). CPT4 is optional and needs a UMLS licence.
 
 Install Python dependencies (tested with PyTorch 2.5.1, CUDA 12.4, PyTorch Geometric 2.7.0, PyKEEN 1.11.1). Install PyTorch for your platform first, then the rest:
 
@@ -119,30 +119,19 @@ docker-compose up -d
 bash OHDSI_MIMIC/run/run_pipeline.sh
 ```
 
-**Download Athena vocabularies** (SNOMED CT, RxNorm, LOINC) from [athena.ohdsi.org](https://athena.ohdsi.org/) and update the path in `OHDSI_MIMIC/staging/01_load_vocab.sql`.
+**Download Athena vocabularies** (see [Requirements](#requirements) for the list) from [athena.ohdsi.org](https://athena.ohdsi.org/).
+
+**Paths to edit before running.** File paths in the SQL are placeholders:
+
+| File | What to change |
+|------|----------------|
+| `staging/00_load_raw_csv.sql` | `'/path/to/mimiciv/...'` in each `\COPY` line → your MIMIC-IV `hosp/` and `icu/` folders (`\COPY` reads files from the machine running `psql`) |
+| `staging/01_load_vocab.sql` | the vocabulary CSV paths → your Athena download folder |
+| `export/01–03` | `'C:/omop_export/...'` in each `COPY ... TO` → your export folder. Server-side `COPY` writes on the database server (inside the Docker container) and needs superuser rights; use `\copy` in `psql` to write locally instead |
 
 ---
 
-### 2. Train RotatE KG Embeddings
-
-Trains RotatE embeddings on OMOP concept triples exported from the CDM. Only concepts appearing in patient graphs are embedded to keep the table size manageable.
-
-```bash
-python src/kg/train_rotate.py \
-    --triples_path /path/to/omop_export/kg_triples.csv \
-    --vocab_path   /path/to/processed/concept_vocab.json \
-    --out_dir      /path/to/processed/kg_embeddings \
-    --embed_dim    128 \
-    --num_epochs   200 \
-    --batch_size   4096 \
-    --device       cuda
-```
-
-**Output:** `entity_embeddings.pt`, `relation_embeddings.pt`, `kg_vocab.json`
-
----
-
-### 3. Build Patient Graphs
+### 2. Build Patient Graphs
 
 Converts OMOP CDM exports into per-patient PyG `HeteroData` graphs.
 
@@ -164,17 +153,50 @@ python src/preprocess/build_patient_graphs.py \
 
 **Edge types:** `visit→condition`, `visit→procedure`, `visit→drug`, `visit→visit` (temporal)
 
-**Output:** `patient_graphs.pt`, `concept_vocab.json`, `stats.json`
+**Output:** `patient_graphs.pt`, `concept_vocab.json`, `label_vocab.json`, `stats.json`
 
 ---
 
-### 4. Train the GNN
+### 2b. Train RotatE KG Embeddings (optional, KG variant only)
+
+Needed only for the KG-embedding variant (E8); the best configuration (E11) does not use it. Requires `concept_vocab.json` from step 2. Trains RotatE embeddings on OMOP concept triples exported from the CDM. Only concepts appearing in patient graphs are embedded to keep the table size manageable.
+
+```bash
+python src/kg/train_rotate.py \
+    --triples_path /path/to/omop_export/kg_triples.csv \
+    --vocab_path   /path/to/processed/concept_vocab.json \
+    --out_dir      /path/to/processed/kg_embeddings \
+    --embed_dim    128 \
+    --num_epochs   200 \
+    --batch_size   4096 \
+    --device       cuda
+```
+
+**Output:** `entity_embeddings.pt`, `relation_embeddings.pt`, `kg_vocab.json`
+
+---
+
+### 3. Train the GNN
 
 > **GNN implementation** based on [TRANS](https://github.com/The-Real-JerryChen/TRANS) — official implementation for "Predictive Modeling with Temporal Graphical Representation on Electronic Health Records" (IJCAI 2024). The PatientGNN architecture replicates and extends TRANS with OMOP CDM support and RotatE KG embeddings.
 
 PatientGNN (E-TRANS) supports two tasks:
 
-**Diagnosis prediction (multi-label, 275 SNOMED CT labels):**
+**Diagnosis prediction (multi-label, 275 SNOMED CT labels), best configuration E11 (macro AUROC 0.909):**
+```bash
+python src/gnn/train.py     --task diagnosis     --data_source omop     --graphs_path /path/to/processed/patient_graphs.pt     --vocab_path  /path/to/processed/concept_vocab.json     --no_kg     --pw_mode     sqrt5     --out_dir     /path/to/models     --device      cuda
+```
+
+Other configurations from the paper (OMOP data; all other settings default, `--seed 42`, 75/10/15 split):
+
+| Exp | KG embeddings | `--pw_mode` | Flags |
+|-----|---------------|-------------|-------|
+| E8  | Yes (RotatE)  | `cap50` | `--kg_vocab ... --kg_matrix ...` |
+| E9  | No            | `cap50` | `--no_kg` |
+| E10 | No            | `cap10` | `--no_kg --pw_mode cap10` |
+| E11 | No            | `sqrt5` | `--no_kg --pw_mode sqrt5` |
+
+With KG embeddings (E8):
 ```bash
 python src/gnn/train.py \
     --task diagnosis \
@@ -187,7 +209,7 @@ python src/gnn/train.py \
     --device      cuda
 ```
 
-**Mortality + 30-day readmission (binary):**
+**Mortality + 30-day readmission (binary):** 
 ```bash
 python src/gnn/train.py \
     --task mort_read \
@@ -202,11 +224,13 @@ python src/gnn/train.py \
 - Laplacian PE + MetaPath Random Walk SE on visit nodes
 - TransformerEncoder over temporal visit sequence
 - Dual-branch fusion (graph + sequence, α = 0.8)
-- Pretrained RotatE embeddings for concept nodes (OMOP concept_relationship)
+- Optional pretrained RotatE embeddings for concept nodes (OMOP concept_relationship); not used in E11
 
 ---
 
-### 5. Gradient Attribution
+### 4. Gradient Attribution
+
+The attribution scripts build the model without KG embeddings, so use a checkpoint trained with `--no_kg` (E9–E11). `batch_explain.py` uses the same preprocessing and seeded test split as `train.py`.
 
 **Single patient:**
 ```bash
@@ -219,7 +243,7 @@ python analysis/explain_patient.py \
     --out_dir      analysis/explain
 ```
 
-**Batch attribution (full test set, HPC):**
+**Batch attribution (full test set):**
 ```bash
 python analysis/batch_explain.py \
     --graphs_path /path/to/processed/patient_graphs.pt \
@@ -231,13 +255,13 @@ python analysis/batch_explain.py \
     --device      cuda
 ```
 
-Outputs one enriched JSON per patient with top-k attributed concepts per domain (condition, procedure, drug).
+Outputs one JSON per patient with the top-k attributed concepts per domain (condition, procedure, drug). `analysis/query_concepts.py --attribution <file>` adds concept names and SNOMED ancestors from the OMOP vocabulary (writes `<file>_enriched.json` to the current folder; set `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`).
 
 ---
 
-### 6. Attribution Dashboard (Streamlit)
+### 5. Attribution Dashboard (Streamlit)
 
-Interactive browser for exploring attribution results across 20,000+ patients:
+Interactive browser for exploring attribution results:
 
 ```bash
 streamlit run analysis/attribution_app.py -- --data_dir analysis/explain/batch
@@ -250,7 +274,9 @@ Features:
 
 ---
 
-### 7. Analysis Scripts
+### 6. Analysis Scripts
+
+The TRANS comparison scripts (`analyse_per_label.py`, `analyse_cancer_subgroup.py`, `analyse_early_prediction_separate_models.py`) and `train.py --data_source pyhealth` also need the TRANS benchmark code, adapted to OMOP, on the Python path. It is not included in this repository.
 
 | Script | Description |
 |--------|-------------|
@@ -275,10 +301,9 @@ Features:
 | Task | Metric | Score |
 |------|--------|-------|
 | Diagnosis (275 labels) | Macro AUROC | 0.909 |
-| Diagnosis (275 labels) | Micro AUROC | — |
-| Mort + Readmission | AUROC | — |
+| Diagnosis (275 labels) | Macro AUPRC | 0.336 |
 
-Evaluated on MIMIC-IV test set (20,033 patients).
+Configuration E11. Evaluated on the MIMIC-IV test set (15,024 patients).
 
 ---
 
@@ -295,5 +320,4 @@ Patient-level data (MIMIC-IV) cannot be shared under the PhysioNet Data Use Agre
 
 ## License
 
-Code: MIT License  
 Data: Subject to [PhysioNet Credentialed Health Data License](https://physionet.org/content/mimiciv/view-license/) and MIMIC-IV Data Use Agreement
