@@ -1,8 +1,13 @@
 """
 batch_explain.py
 ================
-Runs gradient attribution for every patient in the test split and saves
-one JSON per patient to --out_dir.
+Runs gradient attribution for every patient in the model's test split and
+saves one JSON per patient to --out_dir.
+
+Graphs go through the same preprocessing and seeded split as training
+(src/gnn/train.py: load_omop_diagnosis_data + split_graphs), so attributions
+are computed on the 15% test set the model was evaluated on, with the
+last-visit condition edges removed and visit features normalised.
 
 Designed to run on HPC (GPU). Loads the model and graphs once, then
 iterates. Skips patients whose JSON already exists (safe to resume after
@@ -39,7 +44,9 @@ import torch
 import torch.nn.functional as F
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src" / "gnn"))  # train.py imports `model`
 from src.gnn.model import PatientGNN, _sinusoidal_lpe, _metapath_rw_se
+from src.gnn.train import load_omop_diagnosis_data, split_graphs
 from analysis.explain_patient import (
     build_index_to_concept,
     gradient_attribution,
@@ -122,6 +129,10 @@ def main():
                    help="Skip patients with fewer condition nodes")
     p.add_argument("--overwrite",      action="store_true",
                    help="Re-compute even if output JSON already exists")
+    # Must match the training run (train.py defaults)
+    p.add_argument("--val_frac",       type=float, default=0.10)
+    p.add_argument("--test_frac",      type=float, default=0.15)
+    p.add_argument("--seed",           type=int,   default=42)
     args = p.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -156,19 +167,26 @@ def main():
         proc_vocab_size=vocab_sizes["procedure"],
         drug_vocab_size=vocab_sizes["drug"],
     )
-    model.load_state_dict(state, strict=False)
+    missing, unexpected = model.load_state_dict(state, strict=False)
+    if missing or unexpected:
+        print(f"WARNING: checkpoint mismatch: {len(missing)} missing keys, "
+              f"{len(unexpected)} unexpected keys: {missing[:5]} {unexpected[:5]}")
     model.to(args.device)
     model.eval()
     print(f"Model loaded on {args.device}.")
 
     # ── Graphs ----------------------------------------------------------------
+    # Same preprocessing and split as training: drop graphs without labels,
+    # normalise visit features, remove last-visit condition edges (label
+    # leakage), then the seeded 75/10/15 split.
     print(f"Loading graphs: {args.graphs_path}")
-    graphs     = torch.load(args.graphs_path, map_location="cpu",
-                            weights_only=False)
-    n          = len(graphs)
-    test_start = int(n * 0.8)
-    test_graphs = graphs[test_start:]
-    print(f"Total graphs: {n} | Test split: {len(test_graphs)} patients")
+    loader_args = argparse.Namespace(graphs_path=args.graphs_path,
+                                     vocab_path=args.vocab_path)
+    graphs, _, _ = load_omop_diagnosis_data(loader_args)
+    _, _, test_graphs = split_graphs(graphs, args.val_frac, args.test_frac,
+                                     args.seed)
+    print(f"Total graphs: {len(graphs)} | Test split: {len(test_graphs)} patients "
+          f"(val_frac={args.val_frac}, test_frac={args.test_frac}, seed={args.seed})")
 
     # Slice
     end = args.end if args.end is not None else len(test_graphs)
